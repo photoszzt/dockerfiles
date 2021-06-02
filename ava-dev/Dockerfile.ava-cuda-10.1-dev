@@ -1,0 +1,100 @@
+# FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04
+FROM phusion/baseimage:bionic-1.0.0
+CMD ["/sbin/my_init"]
+
+#install ava deps
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=America/Chicago
+
+RUN apt-get update \
+    && apt-get install -y apt-transport-https ca-certificates gnupg software-properties-common wget bash-completion curl openssh-server sudo \
+    && wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null \
+    && apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' \
+    && apt-get update \
+    && apt-get purge --auto-remove cmake
+
+ARG USER_NAME=ubuntu
+ARG USER_UID=1000
+
+RUN useradd -b /home -m -s /bin/bash -u ${USER_UID} ${USER_NAME} && \
+    usermod -p '*' ${USER_NAME} && \
+    echo "${USER_NAME} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+RUN rm -f /etc/service/sshd/down
+RUN /etc/my_init.d/00_regen_ssh_host_keys.sh
+EXPOSE 22
+
+COPY ./id_rsa.pub /tmp
+RUN sudo -u ${USER_NAME} mkdir -p /home/${USER_NAME}/.ssh && \
+    sudo -u ${USER_NAME} touch /home/${USER_NAME}/.ssh/authorized_keys && \
+    cat /tmp/id_rsa.pub >> /home/${USER_NAME}/.ssh/authorized_keys && \
+    rm /tmp/id_rsa.pub
+
+# install cuda and dependencies
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/$(uname -m)/7fa2af80.pub \
+    && echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/$(uname -m) /" > /etc/apt/sources.list.d/cuda.list
+ENV CUDA_VERSION 10.1
+ENV CUDA_VERSION_STR 10-1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cuda-cudart-${CUDA_VERSION_STR} \
+    cuda-compat-${CUDA_VERSION_STR} \
+    cuda-libraries-${CUDA_VERSION_STR} \
+    cuda-nvtx-${CUDA_VERSION_STR} \
+    libcublas10 \
+    cuda-cusparse-${CUDA_VERSION_STR} \
+    cuda-cudart-dev-${CUDA_VERSION} \
+    cuda-command-line-tools-${CUDA_VERSION_STR} \
+    cuda-nvml-dev-${CUDA_VERSION_STR} \
+    libcublas-dev \
+    cuda-cusparse-dev-${CUDA_VERSION_STR} \
+    && ln -s /usr/local/cuda-10.1 /usr/local/cuda
+
+# Required for nvidia-docker v1
+RUN echo "/usr/local/nvidia/lib" >> /etc/ld.so.conf.d/nvidia.conf \
+    && echo "/usr/local/nvidia/lib64" >> /etc/ld.so.conf.d/nvidia.conf
+
+ENV PATH /usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
+ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64
+
+ENV NVIDIA_VISIBLE_DEVICES all
+ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+
+ENV CUDNN_VERSION 8.0.5.39
+
+RUN apt-get install -y --no-install-recommends \
+    libcudnn8=${CUDNN_VERSION}-1+cuda${CUDA_VERSION} \
+    libcudnn8-dev=${CUDNN_VERSION}-1+cuda${CUDA_VERSION} \
+    && apt-mark hold libcudnn8
+
+# install other ava dependencies from "install_dependencies.sh" script
+RUN apt-get install -y cmake git build-essential python3 python3-pip libglib2.0-dev \
+        clang-7 libclang-7-dev libboost-all-dev libconfig++-dev indent \
+        ccache clang-tidy-7 clang-format-7
+
+RUN apt -y install build-essential htop nano git gdb tmux python3-pip && \
+    apt -y install less libxext6 libxrender1 libxtst6 libfreetype6 libxi6 && \
+    apt -y clean
+
+ENV PATH=/home/${USER_NAME}/.local/bin:$PATH
+
+USER ubuntu
+
+RUN sudo -u ${USER_NAME} pip3 install -U pip setuptools --user
+RUN sudo -u ${USER_NAME} pip3 install wget pkgconfig \
+        toposort astor 'numpy==1.15.0' blessings clang-format==9.0 --user
+RUN sudo -u ${USER_NAME} pip3 install projector-installer --user
+
+ENV PROJECTOR_BIN="/home/${USER_NAME}/.local/bin/projector"
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
+
+RUN sudo -u ${USER_NAME} ${PROJECTOR_BIN} --accept-license \
+    ide autoinstall --config-name idea --port 8080 \
+    --ide-name "CLion 2020.3.2"
+EXPOSE 8080
+
+RUN sudo mkdir -p /etc/service/projector && \
+    echo "#!/bin/sh\nexec /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} config run" | sudo tee /etc/service/projector/run && \
+    sudo chmod +x /etc/service/projector/run
+USER root
