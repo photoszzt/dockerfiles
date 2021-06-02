@@ -14,7 +14,7 @@ RUN apt-get update \
     && apt-get purge --auto-remove cmake
 
 ARG USER_NAME=ubuntu
-ARG USER_UID=1000
+ARG USER_UID
 
 RUN useradd -b /home -m -s /bin/bash -u ${USER_UID} ${USER_NAME} && \
     usermod -p '*' ${USER_NAME} && \
@@ -78,18 +78,17 @@ RUN apt -y install build-essential htop nano git gdb tmux python3-pip && \
 
 ENV PATH=/home/${USER_NAME}/.local/bin:$PATH
 
-USER ubuntu
-
-RUN sudo -u ${USER_NAME} pip3 install -U pip setuptools --user
-RUN sudo -u ${USER_NAME} pip3 install wget pkgconfig \
+RUN /sbin/setuser ${USER_NAME} python3 -m pip install -U pip setuptools
+RUN /sbin/setuser ${USER_NAME} python3 -m pip install setuptools pkgconfig --user
+RUN /sbin/setuser ${USER_NAME} python3 -m pip install wget  \
         toposort astor 'numpy==1.15.0' blessings clang-format==9.0 --user
-RUN sudo -u ${USER_NAME} pip3 install projector-installer --user
+RUN /sbin/setuser ${USER_NAME} python3 -m pip install projector-installer --user
 
 ENV PROJECTOR_BIN="/home/${USER_NAME}/.local/bin/projector"
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 
-RUN sudo -u ${USER_NAME} ${PROJECTOR_BIN} --accept-license \
+RUN /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} --accept-license \
     ide autoinstall --config-name idea --port 8080 \
     --ide-name "CLion 2020.3.2"
 EXPOSE 8080
@@ -97,4 +96,3 @@ EXPOSE 8080
 RUN sudo mkdir -p /etc/service/projector && \
     echo "#!/bin/sh\nexec /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} config run" | sudo tee /etc/service/projector/run && \
     sudo chmod +x /etc/service/projector/run
-USER root

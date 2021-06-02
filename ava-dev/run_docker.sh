@@ -21,7 +21,7 @@ DEBUG_FLAGS="--cap-add=SYS_PTRACE --security-opt seccomp=unconfined"
 DOCKER_MAP="-v $PWD:$PWD -w $PWD -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v \
   $ROOT_DIR:/source -v $CACHE_DIR/ccache:/root/.ccache"
 
-DOCKER_FLAGS="--rm ${DOCKER_MAP} -u$(id -u):$(id -g) --user $DOCKER_USER --ipc=host --security-opt seccomp=unconfined ${DEBUG_FLAGS}"
+DOCKER_FLAGS="--rm ${DOCKER_MAP} --user root --ipc=host --security-opt seccomp=unconfined ${DEBUG_FLAGS}"
 if [[ ${DOCKER_IMAGE} == *"rocm"* ]]; then
     DOCKER_FLAGS="${DOCKER_FLAGS} --device=/dev/kfd --device=/dev/dri --group-add video"
 elif [[ ${DOCKER_IMAGE} == *"cuda"* ]]; then
