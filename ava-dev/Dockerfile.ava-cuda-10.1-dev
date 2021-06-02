@@ -31,23 +31,20 @@ RUN sudo -u ${USER_NAME} mkdir -p /home/${USER_NAME}/.ssh && \
     rm /tmp/id_rsa.pub
 
 # install cuda and dependencies
-RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/$(uname -m)/7fa2af80.pub \
-    && echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/$(uname -m) /" > /etc/apt/sources.list.d/cuda.list
-ENV CUDA_VERSION 10.1
-ENV CUDA_VERSION_STR 10-1
+# base
+RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub | apt-key add - && \
+    echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64 /" > /etc/apt/sources.list.d/cuda.list && \
+    echo "deb https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64 /" > /etc/apt/sources.list.d/nvidia-ml.list
+
+ENV CUDA_VERSION 10.1.243
+ENV CUDA_PKG_VERSION 10-1=$CUDA_VERSION-1
+
+RUN echo "export CUDA_VERSION=\"${CUDA_VERSION}\"" | tee -a /home/${USER_NAME}/.profile \
+    && echo "export CUDA_PKG_VERSION=\"${CUDA_PKG_VERSION}\"" | tee -a /home/${USER_NAME}/.profile
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    cuda-cudart-${CUDA_VERSION_STR} \
-    cuda-compat-${CUDA_VERSION_STR} \
-    cuda-libraries-${CUDA_VERSION_STR} \
-    cuda-nvtx-${CUDA_VERSION_STR} \
-    libcublas10 \
-    cuda-cusparse-${CUDA_VERSION_STR} \
-    cuda-cudart-dev-${CUDA_VERSION} \
-    cuda-command-line-tools-${CUDA_VERSION_STR} \
-    cuda-nvml-dev-${CUDA_VERSION_STR} \
-    libcublas-dev \
-    cuda-cusparse-dev-${CUDA_VERSION_STR} \
+    cuda-cudart-$CUDA_PKG_VERSION \
+    cuda-compat-10-1 \
     && ln -s /usr/local/cuda-10.1 /usr/local/cuda
 
 # Required for nvidia-docker v1
@@ -55,28 +52,71 @@ RUN echo "/usr/local/nvidia/lib" >> /etc/ld.so.conf.d/nvidia.conf \
     && echo "/usr/local/nvidia/lib64" >> /etc/ld.so.conf.d/nvidia.conf
 
 ENV PATH /usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
-ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64
+ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
+RUN echo "export PATH=\"${PATH}\"" | tee -a /home/${USER_NAME}/.profile \
+    && echo "export LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\"" | tee -a /home/${USER_NAME}/.profile
 
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+ENV NVIDIA_REQUIRE_CUDA "cuda>=10.1 brand=tesla,driver>=396,driver<397 brand=tesla,driver>=410,driver<411 brand=tesla,driver>=418,driver<419"
+RUN echo "export NVIDIA_VISIBLE_DEVICES=\"${NVIDIA_VISIBLE_DEVICES}\"" | tee -a /home/${USER_NAME}/.profile \
+    && echo "export NVIDIA_DRIVER_CAPABILITIES=\"${NVIDIA_DRIVER_CAPABILITIES}\"" | tee -a /home/${USER_NAME}/.profile \
+    && echo "export NVIDIA_REQUIRE_CUDA=\"${NVIDIA_REQUIRE_CUDA}\"" | tee -a /home/${USER_NAME}/.profile
 
-ENV CUDNN_VERSION 8.0.5.39
+# runtime
+ENV NCCL_VERSION 2.8.3
+RUN echo "export NCCL_VERSION=\"${NCCL_VERSION}\"" | tee -a /home/${USER_NAME}/.profile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cuda-libraries-$CUDA_PKG_VERSION \
+    cuda-npp-$CUDA_PKG_VERSION \
+    cuda-nvtx-$CUDA_PKG_VERSION \
+    libcublas10=10.2.1.243-1 \
+    libnccl2=$NCCL_VERSION-1+cuda10.1 \
+    && apt-mark hold libnccl2
+
+# apt from auto upgrading the cublas package. See https://gitlab.com/nvidia/container-images/cuda/-/issues/88
+RUN apt-mark hold libcublas10
+
+# develp
+RUN apt-get install -y --no-install-recommends \
+    cuda-nvml-dev-$CUDA_PKG_VERSION \
+    cuda-command-line-tools-$CUDA_PKG_VERSION \
+    cuda-nvprof-$CUDA_PKG_VERSION \
+    cuda-npp-dev-$CUDA_PKG_VERSION \
+    cuda-libraries-dev-$CUDA_PKG_VERSION \
+    cuda-minimal-build-$CUDA_PKG_VERSION \
+    libcublas-dev=10.2.1.243-1 \
+    libnccl-dev=2.8.3-1+cuda10.1 \
+    && apt-mark hold libnccl-dev
+
+# apt from auto upgrading the cublas package. See https://gitlab.com/nvidia/container-images/cuda/-/issues/88
+RUN apt-mark hold libcublas-dev
+
+ENV LIBRARY_PATH /usr/local/cuda/lib64/stubs
+RUN echo "export LIBRARY_PATH=\"${LIBRARY_PATH}\"" | tee -a /home/${USER_NAME}/.profile
+
+# cudnn 7 and develp
+ENV CUDNN_VERSION 7.6.5.32
+RUN echo "export CUDNN_VERSION=\"${CUDNN_VERSION}\"" | tee -a /home/${USER_NAME}/.profile
+
+LABEL com.nvidia.cudnn.version="${CUDNN_VERSION}"
 
 RUN apt-get install -y --no-install-recommends \
-    libcudnn8=${CUDNN_VERSION}-1+cuda${CUDA_VERSION} \
-    libcudnn8-dev=${CUDNN_VERSION}-1+cuda${CUDA_VERSION} \
-    && apt-mark hold libcudnn8
+    libcudnn7=$CUDNN_VERSION-1+cuda10.1 \
+    libcudnn7-dev=$CUDNN_VERSION-1+cuda10.1 \
+    && apt-mark hold libcudnn7
 
 # install other ava dependencies from "install_dependencies.sh" script
 RUN apt-get install -y cmake git build-essential python3 python3-pip libglib2.0-dev \
         clang-7 libclang-7-dev libboost-all-dev libconfig++-dev indent \
-        ccache clang-tidy-7 clang-format-7
+        ccache clang-tidy-7 clang-format-7 ninja-build
 
 RUN apt -y install build-essential htop nano git gdb tmux python3-pip && \
     apt -y install less libxext6 libxrender1 libxtst6 libfreetype6 libxi6 && \
     apt -y clean
 
 ENV PATH=/home/${USER_NAME}/.local/bin:$PATH
+RUN echo "export PATH=\"${PATH}\"" | tee -a /home/${USER_NAME}/.profile
 
 RUN /sbin/setuser ${USER_NAME} python3 -m pip install -U pip setuptools
 RUN /sbin/setuser ${USER_NAME} python3 -m pip install setuptools pkgconfig --user
@@ -87,6 +127,9 @@ RUN /sbin/setuser ${USER_NAME} python3 -m pip install projector-installer --user
 ENV PROJECTOR_BIN="/home/${USER_NAME}/.local/bin/projector"
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
+RUN echo "export PROJECTOR_BIN=\"${PROJECTOR_BIN}\"" | tee -a /home/${USER_NAME}/.profile \
+    && echo "export LC_ALL=\"${LC_ALL}\"" | tee -a /home/${USER_NAME}/.profile \
+    && echo "export LANG=\"${LANG}\"" | tee -a /home/${USER_NAME}/.profile
 
 RUN /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} --accept-license \
     ide autoinstall --config-name idea --port 8080 \
@@ -94,5 +137,7 @@ RUN /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} --accept-license \
 EXPOSE 8080
 
 RUN sudo mkdir -p /etc/service/projector && \
-    echo "#!/bin/sh\nexec /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} config run" | sudo tee /etc/service/projector/run && \
+    echo "#!/bin/sh\nexec /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} config run" | sudo tee -a /etc/service/projector/run && \
     sudo chmod +x /etc/service/projector/run
+
+RUN echo "fs.inotify.max_user_watches = 524288" | sudo tee -a /etc/sysctl.conf

@@ -15,7 +15,7 @@ ROOT_DIR=$(cd "$(dirname "$0")"/../../; pwd)
 CACHE_DIR=${CACHE_DIR:-$HOME/.cache/$DOCKER_IMAGE}
 
 DEBUG_FLAGS="--cap-add=SYS_PTRACE --security-opt seccomp=unconfined"
-DOCKER_MAP="-v $ROOT_DIR:/source -v $CACHE_DIR/ccache:/root/.ccache"
+DOCKER_MAP="-v $CACHE_DIR/ccache:/home/ubuntu/.ccache"
 
 DOCKER_FLAGS="--rm ${DOCKER_MAP} --ipc=host --security-opt seccomp=unconfined ${DEBUG_FLAGS}"
 if [[ ${DOCKER_IMAGE} == *"rocm"* ]]; then
