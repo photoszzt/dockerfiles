@@ -13,25 +13,17 @@ shift # Consume argument 1
 RUN_DOCKER_INTERACTIVE=${RUN_DOCKER_INTERACTIVE:-1}
 ROOT_DIR=$(cd "$(dirname "$0")"/../../; pwd)
 CACHE_DIR=${CACHE_DIR:-$HOME/.cache/$DOCKER_IMAGE}
-if [[ -z "${DOCKER_USER}" ]]; then
-  DOCKER_USER="$(id -u):$(id -g)"
-fi
 
 DEBUG_FLAGS="--cap-add=SYS_PTRACE --security-opt seccomp=unconfined"
-DOCKER_MAP="-v $PWD:$PWD -w $PWD -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v \
-  $ROOT_DIR:/source -v $CACHE_DIR/ccache:/root/.ccache"
+DOCKER_MAP="-v $ROOT_DIR:/source -v $CACHE_DIR/ccache:/root/.ccache"
 
-DOCKER_FLAGS="--rm ${DOCKER_MAP} --user root --ipc=host --security-opt seccomp=unconfined ${DEBUG_FLAGS}"
+DOCKER_FLAGS="--rm ${DOCKER_MAP} --ipc=host --security-opt seccomp=unconfined ${DEBUG_FLAGS}"
 if [[ ${DOCKER_IMAGE} == *"rocm"* ]]; then
     DOCKER_FLAGS="${DOCKER_FLAGS} --device=/dev/kfd --device=/dev/dri --group-add video"
 elif [[ ${DOCKER_IMAGE} == *"cuda"* ]]; then
     DOCKER_FLAGS="${DOCKER_FLAGS} --gpus all"
 fi
 
-if [ "${RUN_DOCKER_INTERACTIVE}" -eq 1 ]; then
-    DOCKER_CMD="docker run -it ${DOCKER_FLAGS} ${DOCKER_IMAGE}"
-else
-    DOCKER_CMD="docker run -i ${DOCKER_FLAGS} ${DOCKER_IMAGE}"
-fi
+DOCKER_CMD="docker run -d ${DOCKER_FLAGS} ${DOCKER_IMAGE}"
 
 ${DOCKER_CMD} "$@"
