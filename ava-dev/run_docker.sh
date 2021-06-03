@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e  # exit on error
+set -x
 
 if [ -z "$1" ]
   then
@@ -8,10 +9,8 @@ if [ -z "$1" ]
     exit 1
 fi
 
-DOCKER_IMAGE=${1}
-shift # Consume argument 1
-RUN_DOCKER_INTERACTIVE=${RUN_DOCKER_INTERACTIVE:-1}
-ROOT_DIR=$(cd "$(dirname "$0")"/../../; pwd)
+for last; do true; done
+DOCKER_IMAGE=$last
 CACHE_DIR=${CACHE_DIR:-$HOME/.cache/$DOCKER_IMAGE}
 
 DEBUG_FLAGS="--cap-add=SYS_PTRACE --security-opt seccomp=unconfined"
@@ -24,6 +23,6 @@ elif [[ ${DOCKER_IMAGE} == *"cuda"* ]]; then
     DOCKER_FLAGS="${DOCKER_FLAGS} --gpus all"
 fi
 
-DOCKER_CMD="docker run -d ${DOCKER_FLAGS} ${DOCKER_IMAGE}"
+DOCKER_CMD="docker run -d ${DOCKER_FLAGS}"
 
 ${DOCKER_CMD} "$@"
