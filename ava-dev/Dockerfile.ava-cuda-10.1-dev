@@ -166,9 +166,8 @@ RUN git clone --recurse-submodules -b v1.38.0 https://github.com/grpc/grpc \
     && cd - && mkdir -p third_party/abseil-cpp/cmake/build && cd third_party/abseil-cpp/cmake/build \
     && cmake -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE ../.. && make -j && sudo make install
 
-RUN /sbin/setuser ${USER_NAME} python3 -m pip install astunparse pyyaml cffi typing_extensions future six requests dataclasses --user
-RUN python3 -m pip install --prefix=/opt/intel/mkl mkl mkl-include
-RUN cd /opt/intel/mkl/lib \
+RUN /sbin/setuser ${USER_NAME} python3 -m pip install astunparse pyyaml mkl mkl-include cffi typing_extensions future six requests dataclasses --user
+RUN cd /home/${USER_NAME}/.local/lib/ \
     && ln -s libmkl_avx.so.1 libmkl_avx.so \
     && ln -s libmkl_avx2.so.1 libmkl_avx2.so \
     && ln -s libmkl_avx512.so.1 libmkl_avx512.so \
