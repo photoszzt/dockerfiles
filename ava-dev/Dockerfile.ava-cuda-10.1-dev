@@ -106,9 +106,9 @@ RUN apt update && apt-get install -y --no-install-recommends \
     && apt-mark hold libcudnn7
 
 # install other ava dependencies from "install_dependencies.sh" script
-RUN apt-get install -y cmake git build-essential python3 python3-pip libglib2.0-dev \
+RUN apt-get update && apt-get install -y cmake git build-essential python3 python3-pip libglib2.0-dev \
         clang-7 libclang-7-dev libboost-all-dev libconfig++-dev indent \
-        ccache clang-tidy-7 clang-format-7 ninja-build
+        ccache ninja-build
 
 RUN apt -y install build-essential htop nano git gdb tmux python3-pip && \
     apt -y install less libxext6 libxrender1 libxtst6 libfreetype6 libxi6 && \
@@ -120,23 +120,90 @@ RUN echo "export PATH=\"${PATH}\"" | tee -a /home/${USER_NAME}/.profile
 RUN /sbin/setuser ${USER_NAME} python3 -m pip install -U pip setuptools
 RUN /sbin/setuser ${USER_NAME} python3 -m pip install setuptools pkgconfig --user
 RUN /sbin/setuser ${USER_NAME} python3 -m pip install wget  \
-        toposort astor 'numpy==1.15.0' blessings clang-format==9.0 --user
-RUN /sbin/setuser ${USER_NAME} python3 -m pip install projector-installer --user
+        toposort astor 'numpy==1.15.0' blessings clang-format==9.0 pybind11 numba \
+        opencv-python-headless --user
+# RUN /sbin/setuser ${USER_NAME} python3 -m pip install projector-installer --user
 
-ENV PROJECTOR_BIN="/home/${USER_NAME}/.local/bin/projector"
+# ENV PROJECTOR_BIN="/home/${USER_NAME}/.local/bin/projector"
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
-RUN echo "export PROJECTOR_BIN=\"${PROJECTOR_BIN}\"" | tee -a /home/${USER_NAME}/.profile \
-    && echo "export LC_ALL=\"${LC_ALL}\"" | tee -a /home/${USER_NAME}/.profile \
-    && echo "export LANG=\"${LANG}\"" | tee -a /home/${USER_NAME}/.profile
+RUN echo "export PROJECTOR_BIN=\"${PROJECTOR_BIN}\"" | tee -a /home/${USER_NAME}/.profile
+RUN echo "export LC_ALL=\"${LC_ALL}\"" | tee -a /home/${USER_NAME}/.profile && \
+    echo "export LANG=\"${LANG}\"" | tee -a /home/${USER_NAME}/.profile
 
-RUN /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} --accept-license \
-    ide autoinstall --config-name idea --port 8080 \
-    --ide-name "CLion 2020.3.2"
-EXPOSE 8080
+# RUN /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} --accept-license \
+#     ide autoinstall --config-name idea --port 8080 \
+#     --ide-name "CLion 2020.3.2"
+# EXPOSE 8080
 
-RUN sudo mkdir -p /etc/service/projector && \
-    echo "#!/bin/sh\nexec /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} config run" | sudo tee -a /etc/service/projector/run && \
-    sudo chmod +x /etc/service/projector/run
+# RUN sudo mkdir -p /etc/service/projector && \
+#     echo "#!/bin/sh\nexec /sbin/setuser ${USER_NAME} ${PROJECTOR_BIN} config run" | sudo tee -a /etc/service/projector/run && \
+#     sudo chmod +x /etc/service/projector/run
 
 RUN echo "fs.inotify.max_user_watches = 524288" | sudo tee -a /etc/sysctl.conf
+
+# install go
+RUN wget https://golang.org/dl/go1.16.5.linux-amd64.tar.gz \
+    && tar -C /usr/local -xf go1.16.5.linux-amd64.tar.gz
+ENV PATH="${PATH}:/usr/local/go/bin:/root/go/bin"
+
+# install grpc and protoc
+RUN go get github.com/golang/protobuf/proto && \
+    go get github.com/golang/protobuf/protoc-gen-go && \
+    go get google.golang.org/grpc && \
+    go get google.golang.org/grpc/cmd/protoc-gen-go-grpc
+
+RUN sudo apt install unzip
+RUN wget https://github.com/protocolbuffers/protobuf/releases/download/v3.17.3/protoc-3.17.3-linux-x86_64.zip \
+    && mkdir protoc && unzip protoc-3.17.3-linux-x86_64.zip -d protoc \
+    && chmod -R a+rx protoc \
+    && sudo mv protoc/bin/* /usr/bin/ && sudo mv protoc/include/* /usr/include/ \
+    && rm -rf protoc
+
+RUN git clone --recurse-submodules -b v1.38.0 https://github.com/grpc/grpc \
+    && cd grpc && mkdir -p cmake/build && cd cmake/build && cmake -DgRPC_INSTALL=ON -DgRPC_BUILD_TESTS=OFF ../.. \
+    && make -j && sudo make install \
+    && cd - && mkdir -p third_party/abseil-cpp/cmake/build && cd third_party/abseil-cpp/cmake/build \
+    && cmake -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE ../.. && make -j && sudo make install
+
+RUN /sbin/setuser ${USER_NAME} python3 -m pip install astunparse pyyaml cffi typing_extensions future six requests dataclasses --user
+RUN python3 -m pip install --prefix=/opt/intel/mkl mkl mkl-include
+RUN cd /opt/intel/mkl/lib \
+    && ln -s libmkl_avx.so.1 libmkl_avx.so \
+    && ln -s libmkl_avx2.so.1 libmkl_avx2.so \
+    && ln -s libmkl_avx512.so.1 libmkl_avx512.so \
+    && ln -s libmkl_avx512_mic.so.1 libmkl_avx512_mic.so \
+    && ln -s libmkl_blacs_intelmpi_ilp64.so.1 libmkl_blacs_intelmpi_ilp64.so \
+    && ln -s libmkl_blacs_intelmpi_lp64.so.1 libmkl_blacs_intelmpi_lp64.so \
+    && ln -s libmkl_blacs_openmpi_ilp64.so.1 libmkl_blacs_openmpi_ilp64.so \
+    && ln -s libmkl_blacs_openmpi_lp64.so.1 libmkl_blacs_openmpi_lp64.so \
+    && ln -s libmkl_blacs_sgimpt_ilp64.so.1 libmkl_blacs_sgimpt_ilp64.so \
+    && ln -s libmkl_blacs_sgimpt_lp64.so.1 libmkl_blacs_sgimpt_lp64.so \
+    && ln -s libmkl_cdft_core.so.1 libmkl_cdft_core.so \
+    && ln -s libmkl_core.so.1 libmkl_core.so \
+    && ln -s libmkl_def.so.1 libmkl_def.so \
+    && ln -s libmkl_gf_ilp64.so.1 libmkl_gf_ilp64.so \
+    && ln -s libmkl_gf_lp64.so.1 libmkl_gf_lp64.so \
+    && ln -s libmkl_gnu_thread.so.1 libmkl_gnu_thread.so \
+    && ln -s libmkl_intel_ilp64.so.1 libmkl_intel_ilp64.so \
+    && ln -s libmkl_intel_lp64.so.1 libmkl_intel_lp64.so \
+    && ln -s libmkl_intel_thread.so.1 libmkl_intel_thread.so \
+    && ln -s libmkl_mc.so.1 libmkl_mc.so \
+    && ln -s libmkl_mc3.so.1 libmkl_mc3.so \
+    && ln -s libmkl_pgi_thread.so.1 libmkl_pgi_thread.so \
+    && ln -s libmkl_rt.so.1 libmkl_rt.so \
+    && ln -s libmkl_scalapack_ilp64.so.1 libmkl_scalapack_ilp64.so \
+    && ln -s libmkl_scalapack_lp64.so.1 libmkl_scalapack_lp64.so \
+    && ln -s libmkl_sequential.so.1 libmkl_sequential.so \
+    && ln -s libmkl_tbb_thread.so.1 libmkl_tbb_thread.so \
+    && ln -s libmkl_vml_avx.so.1 libmkl_vml_avx.so \
+    && ln -s libmkl_vml_avx2.so.1 libmkl_vml_avx2.so \
+    && ln -s libmkl_vml_avx512.so.1 libmkl_vml_avx512.so \
+    && ln -s libmkl_vml_avx512_mic.so.1 libmkl_vml_avx512_mic.so \
+    && ln -s libmkl_vml_cmpt.so.1 libmkl_vml_cmpt.so \
+    && ln -s libmkl_vml_def.so.1 libmkl_vml_def.so \
+    && ln -s libmkl_vml_mc.so.1 libmkl_vml_mc.so \
+    && ln -s libmkl_vml_mc2.so.1 libmkl_vml_mc2.so \
+    && ln -s libmkl_vml_mc3.so.1 libmkl_vml_mc3.so
+
+RUN sudo apt install libjpeg-dev libpng-dev
